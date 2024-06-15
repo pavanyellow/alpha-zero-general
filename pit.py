@@ -51,4 +51,4 @@ else:
 
 arena = Arena.Arena(n1p, player2, g, display=OthelloGame.display)
 
-print(arena.playGames(2, verbose=True))
+print(arena.playGames(1, verbose=True))
