@@ -6,30 +6,37 @@ import torch.nn.functional as F
 class SparseAutoencoder(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(SparseAutoencoder, self).__init__()
-        self.encoder = nn.Linear(input_dim, hidden_dim)
-        self.decoder = nn.Linear(hidden_dim, input_dim)
+        self.encoder = nn.Linear(input_dim, hidden_dim, bias=False)
+        self.decoder = nn.Linear(hidden_dim, input_dim, bias=False)
         self.encoder_bias = nn.Parameter(torch.zeros(hidden_dim))
         self.decoder_bias = nn.Parameter(torch.zeros(input_dim))
         self.init_weights()
 
     def init_weights(self):
-        # Initialize encoder and decoder weights
-        nn.init.xavier_uniform_(self.encoder.weight)
+        
+        # Initialize decoder weights (Wd)
         nn.init.xavier_uniform_(self.decoder.weight)
-        # Normalize columns of decoder weights
         with torch.no_grad():
+            # Normalize columns of decoder weights
             norm = self.decoder.weight.norm(p=2, dim=0, keepdim=True)
             self.decoder.weight.div_(norm)
+            # Rescale to desired norm
+            self.decoder.weight.mul_(torch.rand(self.decoder.weight.size(1), 1).mul_(0.95).add_(0.05))
+
+        # Initialize We to Wd^T
+        self.encoder.weight.data.copy_(self.decoder.weight.data.t())
 
     def forward(self, x):
         encoded = F.relu(self.encoder(x) + self.encoder_bias)
         decoded = self.decoder(encoded) + self.decoder_bias
         return decoded, encoded
 
-def sparse_autoencoder_loss(X, reconstructed_X, encoded_X, W_d, lambda_val):
-    mse_loss = ((X - reconstructed_X) ** 2).mean()
-    sparsity_loss = lambda_val * torch.sum(torch.abs(encoded_X) * torch.norm(W_d, p=2, dim=0))
-    return mse_loss + sparsity_loss
+def loss(X, reconstructed_X, encoded_X, W_d, lambda_val):
+    size = X.size(0)
+    mse_loss = ((X - reconstructed_X) ** 2).sum(dim = -1).sum(dim = 0) # torch.sum((a-b)**2)
+    sparsity_loss = lambda_val * (torch.norm(W_d, p=2, dim=0)*encoded_X).sum(dim = 1).sum(dim = 0) # torch.sum(torch.norm(wd, p=2, dim=0)*encoded)
+    return (mse_loss + sparsity_loss) / size
+            
 
 def train_autoencoder(model, dataset, input_dim, hidden_dim, lambda_val=5, learning_rate=5e-5, num_epochs=2000, batch_size=16):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999))
@@ -41,7 +48,7 @@ def train_autoencoder(model, dataset, input_dim, hidden_dim, lambda_val=5, learn
         for batch in dataloader:
             optimizer.zero_grad()
             reconstructed, encoded = model(batch)
-            loss = sparse_autoencoder_loss(batch, reconstructed, encoded, model.decoder.weight, lambda_val * min(epoch / (num_epochs * 0.05), 1.0))
+            loss = loss(batch, reconstructed, encoded, model.decoder.weight, lambda_val * min(epoch / (num_epochs * 0.05), 1.0))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
