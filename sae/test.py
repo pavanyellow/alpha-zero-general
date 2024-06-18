@@ -1,17 +1,20 @@
 import torch
-from model import SparseAutoencoder, train_autoencoder, SAEConfig
+from model import SparseAutoencoder
+from train import train_autoencoder, SAETrainConfig
 
 
-input_dim = 5 
-hidden_dim = 30
-real_features = 20
+input_dim = 4
+hidden_dim = 24
 
+real_features = 32
+sparsity = 0.2
+no_active = int(real_features * sparsity)
 
 data = []
 
 iterations = 2**18
-no_active = 3
-directions = torch.randn(real_features, 5)
+
+directions = torch.randn(real_features, input_dim)
 # Generate data
 for i in range(iterations):
     indices = torch.randperm(real_features)[:no_active]
@@ -21,5 +24,5 @@ for i in range(iterations):
 data = torch.stack(data)
 
 model = SparseAutoencoder(input_dim, hidden_dim)
-train_autoencoder(model, data, SAEConfig(input_dim, hidden_dim, num_epochs=2**12, batch_size=2**6, l1_penalty=2, learning_rate=3e-4))
+train_autoencoder(model, data, SAETrainConfig(input_dim, hidden_dim, num_epochs=2**15, batch_size=2**5, l1_penalty=2, learning_rate=1e-4))
 
