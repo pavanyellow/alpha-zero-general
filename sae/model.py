@@ -21,7 +21,7 @@ class SparseAutoencoder(nn.Module):
             norm = self.decoder.weight.norm(p=2, dim=0, keepdim=True)
             self.decoder.weight.div_(norm)
             # Rescale to desired norm
-            self.decoder.weight.mul_(torch.rand(self.decoder.weight.size(1), 1).mul_(0.95).add_(0.05))
+            #self.decoder.weight.mul_(torch.rand(self.decoder.weight.size(1), 1).mul_(0.95).add_(0.05))
 
         # Initialize We to Wd^T
         self.encoder.weight.data.copy_(self.decoder.weight.data.t())
@@ -31,7 +31,7 @@ class SparseAutoencoder(nn.Module):
         decoded = self.decoder(encoded) + self.decoder_bias
         return decoded, encoded
 
-def loss(X, reconstructed_X, encoded_X, W_d, lambda_val):
+def sae_loss(X, reconstructed_X, encoded_X, W_d, lambda_val):
     size = X.size(0)
     mse_loss = ((X - reconstructed_X) ** 2).sum(dim = -1).sum(dim = 0) # torch.sum((a-b)**2)
     sparsity_loss = lambda_val * (torch.norm(W_d, p=2, dim=0)*encoded_X).sum(dim = 1).sum(dim = 0) # torch.sum(torch.norm(wd, p=2, dim=0)*encoded)
@@ -41,24 +41,43 @@ def loss(X, reconstructed_X, encoded_X, W_d, lambda_val):
 def train_autoencoder(model, dataset, input_dim, hidden_dim, lambda_val=5, learning_rate=5e-5, num_epochs=2000, batch_size=16):
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999))
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 1.0 - max(0, epoch - num_epochs * 0.8) / (num_epochs * 0.2))
-    dataset = dataset * (input_dim / torch.norm(dataset, dim=1, keepdim=True)).sqrt()
+    current_norm = torch.norm(dataset, dim=1, keepdim=True).mean()
+    dataset = ((dataset * (input_dim**0.5)) / current_norm)
+
+
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
     for epoch in range(num_epochs):
         for batch in dataloader:
             optimizer.zero_grad()
             reconstructed, encoded = model(batch)
-            loss = loss(batch, reconstructed, encoded, model.decoder.weight, lambda_val * min(epoch / (num_epochs * 0.05), 1.0))
+            loss = sae_loss(batch, reconstructed, encoded, model.decoder.weight, lambda_val * min(epoch / (num_epochs * 0.05), 1.0))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
         scheduler.step()
-        if epoch % 10 == 0:
+        if epoch % 50 == 0:
             print(f'Epoch {epoch}/{num_epochs}, Loss: {loss.item()}')
 
-input_dim = 10  # Example input dimension
-hidden_dim = 100  # Example hidden dimension
-dataset = torch.randn(10000, input_dim)  # Example dataset
+
+
+input_dim = 5 
+hidden_dim = 20
+
+directions = torch.randn(20, 5)
+
+data = []
+
+# Number of iterations (you have 1 in your loop)
+iterations = 1000
+
+# Generate data
+for i in range(iterations):
+    indices = torch.randperm(20)[:2]
+    acts = (torch.randint(-2, 2, (2,1)) * directions[indices]).sum(dim=0)
+    data.append(acts)
+
+data = torch.stack(data)
 
 model = SparseAutoencoder(input_dim, hidden_dim)
-train_autoencoder(model, dataset, input_dim, hidden_dim)
+train_autoencoder(model, data, input_dim, hidden_dim)
