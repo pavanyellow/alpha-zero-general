@@ -1,19 +1,25 @@
-from model import SparseAutoencoder, train_autoencoder
 import torch
+from model import SparseAutoencoder, train_autoencoder, SAEConfig
 
-directions = torch.randn(20, 5)
+
+input_dim = 5 
+hidden_dim = 30
+real_features = 20
+
 
 data = []
 
-# Number of iterations (you have 1 in your loop)
-iterations = 1000
-
+iterations = 2**18
+no_active = 3
+directions = torch.randn(real_features, 5)
 # Generate data
 for i in range(iterations):
-    indices = torch.randperm(20)[:2]
-    acts = (torch.rand(2, 1) * directions[indices]).sum(dim=0)
+    indices = torch.randperm(real_features)[:no_active]
+    acts = (torch.randint(-2, 2, (no_active,1)) * directions[indices]).sum(dim=0)
     data.append(acts)
 
 data = torch.stack(data)
 
-print(data.size())
+model = SparseAutoencoder(input_dim, hidden_dim)
+train_autoencoder(model, data, SAEConfig(input_dim, hidden_dim, num_epochs=2**12, batch_size=2**6, l1_penalty=2, learning_rate=3e-4))
+

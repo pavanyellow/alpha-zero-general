@@ -1,29 +1,33 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from dataclasses import dataclass
+
+@dataclass
+class SAEConfig:
+    input_dim: int 
+    hidden_dim: int
+    num_epochs: int = 2048
+    batch_size: int = 512
+    l1_penalty: float = 2
+    learning_rate: float = 3e-4
+    
 
 class SparseAutoencoder(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(SparseAutoencoder, self).__init__()
-        self.encoder = nn.Linear(input_dim, hidden_dim, bias=False)
-        self.decoder = nn.Linear(hidden_dim, input_dim, bias=False)
+        self.encoder : nn.Module = nn.Linear(input_dim, hidden_dim, bias=False)
+        self.decoder : nn.Module = nn.Linear(hidden_dim, input_dim, bias=False)
         self.encoder_bias = nn.Parameter(torch.zeros(hidden_dim))
         self.decoder_bias = nn.Parameter(torch.zeros(input_dim))
         self.init_weights()
 
     def init_weights(self):
-        
-        # Initialize decoder weights (Wd)
-        nn.init.xavier_uniform_(self.decoder.weight)
+        nn.init.kaiming_uniform_(self.decoder.weight)
         with torch.no_grad():
-            # Normalize columns of decoder weights
             norm = self.decoder.weight.norm(p=2, dim=0, keepdim=True)
-            self.decoder.weight.div_(norm)
-            # Rescale to desired norm
-            #self.decoder.weight.mul_(torch.rand(self.decoder.weight.size(1), 1).mul_(0.95).add_(0.05))
-
-        # Initialize We to Wd^T
+            self.decoder.weight.div_(10*norm) # Set column norm to 0.1
         self.encoder.weight.data.copy_(self.decoder.weight.data.t())
 
     def forward(self, x):
@@ -32,52 +36,35 @@ class SparseAutoencoder(nn.Module):
         return decoded, encoded
 
 def sae_loss(X, reconstructed_X, encoded_X, W_d, lambda_val):
-    size = X.size(0)
-    mse_loss = ((X - reconstructed_X) ** 2).sum(dim = -1).sum(dim = 0) # torch.sum((a-b)**2)
-    sparsity_loss = lambda_val * (torch.norm(W_d, p=2, dim=0)*encoded_X).sum(dim = 1).sum(dim = 0) # torch.sum(torch.norm(wd, p=2, dim=0)*encoded)
-    return (mse_loss + sparsity_loss) / size
+    mse_loss = ((X - reconstructed_X) ** 2).sum(dim = -1).mean(0) # torch.sum((a-b)**2)
+    sparsity_loss = lambda_val * ((torch.norm(W_d, p=2, dim=0)*encoded_X).sum(dim=1)).mean(0) # torch.sum(torch.norm(wd, p=2, dim=0)*encoded)
+    #print(mse_loss, sparsity_loss)
+    return (mse_loss + sparsity_loss)
             
 
-def train_autoencoder(model, dataset, input_dim, hidden_dim, lambda_val=5, learning_rate=5e-5, num_epochs=2000, batch_size=16):
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.999))
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 1.0 - max(0, epoch - num_epochs * 0.8) / (num_epochs * 0.2))
+def train_autoencoder(model, dataset, config: SAEConfig) -> None:
+
+    print (f"Training autoencoder with config: {config} and dataset shape: {dataset.shape}")
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate, betas=(0.9, 0.999))
+    #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: 1.0 - max(0, epoch - num_epochs * 0.8) / (num_epochs * 0.2))
     current_norm = torch.norm(dataset, dim=1, keepdim=True).mean()
-    dataset = ((dataset * (input_dim**0.5)) / current_norm)
-
-
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataset = ((dataset * (config.input_dim**0.5)) / current_norm)
     
-    for epoch in range(num_epochs):
-        for batch in dataloader:
-            optimizer.zero_grad()
-            reconstructed, encoded = model(batch)
-            loss = sae_loss(batch, reconstructed, encoded, model.decoder.weight, lambda_val * min(epoch / (num_epochs * 0.05), 1.0))
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-        scheduler.step()
-        if epoch % 50 == 0:
-            print(f'Epoch {epoch}/{num_epochs}, Loss: {loss.item()}')
+    data_iter = iter(DataLoader(dataset, batch_size=config.batch_size, shuffle=True))
 
-
-
-input_dim = 5 
-hidden_dim = 20
-
-directions = torch.randn(20, 5)
-
-data = []
-
-# Number of iterations (you have 1 in your loop)
-iterations = 1000
-
-# Generate data
-for i in range(iterations):
-    indices = torch.randperm(20)[:2]
-    acts = (torch.randint(-2, 2, (2,1)) * directions[indices]).sum(dim=0)
-    data.append(acts)
-
-data = torch.stack(data)
-
-model = SparseAutoencoder(input_dim, hidden_dim)
-train_autoencoder(model, data, input_dim, hidden_dim)
+    if (config.num_epochs > dataset.shape[0] // config.batch_size):
+        raise ValueError("Number of epochs is too large for the dataset size")
+    
+    for epoch in range(config.num_epochs):
+        batch = next(data_iter)
+        optimizer.zero_grad()
+        reconstructed, encoded = model(batch)
+        loss = sae_loss(batch, reconstructed, encoded, model.decoder.weight, config.l1_penalty)
+        loss.backward()
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        #scheduler.step()
+        epoch_print_size = config.num_epochs // 16
+        if epoch % epoch_print_size == 0:
+            print(f'Epoch {epoch}/{config.num_epochs}, Loss: {loss.item()} l0: {encoded.norm(0, dim = 1, keepdim=True).mean()}')
