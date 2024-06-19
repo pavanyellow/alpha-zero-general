@@ -79,17 +79,22 @@ class Coach():
 
         for i in range(1, self.args.numIters + 1):
             # bookkeeping
-            log.info(f'Starting Iter #{i} ...')
+            print(f'Starting Iter #{i} ...')
             # examples of the iteration
             if not self.skipFirstSelfPlay or i > 1:
                 iterationTrainExamples = deque([], maxlen=self.args.maxlenOfQueue)
 
-                for _ in tqdm(range(self.args.numEps), desc="Self Play"):
+                #t = tqdm(range(self.args.numEps), desc="Self Play")
+                t = range(self.args.numEps)
+                
+                for _ in t:
                     self.mcts = MCTS(self.game, self.nnet, self.args)  # reset search tree
                     iterationTrainExamples += self.executeEpisode()
 
                 # save the iteration examples to the history 
                 self.trainExamplesHistory.append(iterationTrainExamples)
+
+                #print(f"Added Num examples: {len(iterationTrainExamples)}")
 
             if len(self.trainExamplesHistory) > self.args.numItersForTrainExamplesHistory:
                 log.warning(
@@ -97,7 +102,7 @@ class Coach():
                 self.trainExamplesHistory.pop(0)
             # backup history to a file
             # NB! the examples were collected using the model from the previous iteration, so (i-1)  
-            self.saveTrainExamples(i - 1)
+            #self.saveTrainExamples(i - 1)
 
             # shuffle examples before training
             trainExamples = []
@@ -110,21 +115,25 @@ class Coach():
             self.pnet.load_checkpoint(folder=self.args.checkpoint, filename='temp.pth.tar')
             pmcts = MCTS(self.game, self.pnet, self.args)
 
+            #print(f"iter {i}, starting training ...")
+
             self.nnet.train(trainExamples)
+            #print(f"iter {i}, starting training ...")
             nmcts = MCTS(self.game, self.nnet, self.args)
 
-            log.info('PITTING AGAINST PREVIOUS VERSION')
+            #print(f"iter {i}, PITTING AGAINST PREVIOUS VERSION")
+
             arena = Arena(lambda x: np.argmax(pmcts.getActionProb(x, temp=0)),
                           lambda x: np.argmax(nmcts.getActionProb(x, temp=0)), self.game)
             pwins, nwins, draws = arena.playGames(self.args.arenaCompare)
 
             log.info('NEW/PREV WINS : %d / %d ; DRAWS : %d' % (nwins, pwins, draws))
+            print(f"New wins {nwins}, Previous wins {pwins}, Draws {draws}")
             if pwins + nwins == 0 or float(nwins) / (pwins + nwins) < self.args.updateThreshold:
-                log.info('REJECTING NEW MODEL')
                 self.nnet.load_checkpoint(folder=self.args.checkpoint, filename='temp.pth.tar')
             else:
-                log.info('ACCEPTING NEW MODEL')
-                self.nnet.save_checkpoint(folder=self.args.checkpoint, filename=self.getCheckpointFile(i))
+                print(f'ACCEPTING NEW MODEL with win rate {float(nwins) *100 / (pwins + nwins)} %')
+                #self.nnet.save_checkpoint(folder=self.args.checkpoint, filename=self.getCheckpointFile(i))
                 self.nnet.save_checkpoint(folder=self.args.checkpoint, filename='best.pth.tar')
 
     def getCheckpointFile(self, iteration):

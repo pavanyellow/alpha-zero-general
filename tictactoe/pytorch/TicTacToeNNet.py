@@ -5,52 +5,58 @@ from utils import *
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from ..TicTacToeGame import TicTacToeGame
+
+class ResidualBlock(nn.Module):
+    def __init__(self, hidden_dim):
+        super(ResidualBlock, self).__init__()
+        self.fc = nn.Linear(hidden_dim, hidden_dim)
+        self.bn = nn.BatchNorm1d(hidden_dim)
+
+    def forward(self, x):
+        residual = x
+        out = F.relu(self.bn(self.fc(x)))
+        return out + residual
 
 class TicTacToeNNet(nn.Module):
-    def __init__(self, game, args):
+    def __init__(self, game : TicTacToeGame, args, residual_blocks=4, hidden_dim=64):
         # game params
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
         self.args = args
 
         super(TicTacToeNNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, args.num_channels, 3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1, padding=1)
-        self.conv4 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1)
-
-        self.bn1 = nn.BatchNorm2d(args.num_channels)
-        self.bn2 = nn.BatchNorm2d(args.num_channels)
-        self.bn3 = nn.BatchNorm2d(args.num_channels)
-        self.bn4 = nn.BatchNorm2d(args.num_channels)
-
-        self.fc1 = nn.Linear(args.num_channels*(self.board_x-4)*(self.board_y-4), 1024)
-        self.fc_bn1 = nn.BatchNorm1d(1024)
-
-        self.fc2 = nn.Linear(1024, 512)
-        self.fc_bn2 = nn.BatchNorm1d(512)
-
-        self.fc3 = nn.Linear(512, self.action_size)
-
-        self.fc4 = nn.Linear(512, 1)
+        
+        # Input layer
+        self.fc1 = nn.Linear(self.board_x * self.board_y, hidden_dim)
+        self.fc_bn1 = nn.BatchNorm1d(hidden_dim)
+        
+        # Residual blocks
+        self.res_block1 = ResidualBlock(hidden_dim)
+        self.res_block2 = ResidualBlock(hidden_dim)
+        self.res_block3 = ResidualBlock(hidden_dim)
+        self.res_block4 = ResidualBlock(hidden_dim)
+        
+        # Output layers
+        self.policy_head = nn.Linear(hidden_dim, self.action_size)
+        self.value_head = nn.Linear(hidden_dim, 1)
 
     def forward(self, s: torch.Tensor):
-        s = s.view(-1, 1, self.board_x, self.board_y)                # batch_size x 1 x board_x x board_y
-        #print(s.shape)
-        s = F.relu(self.bn1(self.conv1(s)))                          # batch_size x num_channels x board_x x board_y
-        #print(f"conv1: {s.shape}")
-        s = F.relu(self.bn2(self.conv2(s)))                          # batch_size x num_channels x board_x x board_y
-        #print(f"conv2: {s.shape}")
-        s = F.relu(self.bn3(self.conv3(s)))                          # batch_size x num_channels x (board_x-2) x (board_y-2)
-        #print(f"conv3: {s.shape}")
-        s = F.relu(self.bn4(self.conv4(s)))                          # batch_size x num_channels x (board_x-4) x (board_y-4)
-        #print(f"conv4: {s.shape}")
-        s = s.view(-1, self.args.num_channels*(self.board_x-4)*(self.board_y-4))
+        #print(f"early shape: {s.shape}")  
+        s = s.view(-1, self.board_x * self.board_y)
+        #print(f"Input shape: {s.shape}")  
+        
+        s = F.relu(self.fc_bn1(self.fc1(s)))
+        #print(f"FC1 shape: {s.shape}")         
+        
+        s = self.res_block1(s)                  
+        s = self.res_block2(s)
+        s = self.res_block3(s)
+        s = self.res_block4(s)
 
-        s = F.dropout(F.relu(self.fc_bn1(self.fc1(s))), p=self.args.dropout, training=self.training)  # batch_size x 1024
-        s = F.dropout(F.relu(self.fc_bn2(self.fc2(s))), p=self.args.dropout, training=self.training)  # batch_size x 512
+        policy = self.policy_head(s)
 
-        pi = self.fc3(s)                                                                         # batch_size x action_size
-        v = self.fc4(s)                                                                          # batch_size x 1
+        value = self.value_head(s)                              
 
-        return F.log_softmax(pi, dim=1), torch.tanh(v)
+        return F.log_softmax(policy, dim=1), torch.tanh(value)
+

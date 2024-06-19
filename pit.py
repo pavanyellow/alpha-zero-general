@@ -1,3 +1,5 @@
+import sys
+sys.path.append('..')
 import Arena
 from MCTS import MCTS
 from othello.OthelloGame import OthelloGame

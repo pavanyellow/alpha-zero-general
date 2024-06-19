@@ -21,7 +21,7 @@ args = dotdict({
     'lr': 0.001,
     'dropout': 0.3,
     'epochs': 10,
-    'batch_size': 64,
+    'batch_size': 256,
     'cuda': torch.cuda.is_available(),
     'num_channels': 512,
 })
@@ -43,14 +43,14 @@ class NNetWrapper(NeuralNet):
         optimizer = optim.Adam(self.nnet.parameters())
 
         for epoch in range(args.epochs):
-            print('EPOCH ::: ' + str(epoch + 1))
+            #print('EPOCH ::: ' + str(epoch + 1))
             self.nnet.train()
             pi_losses = AverageMeter()
             v_losses = AverageMeter()
 
             batch_count = int(len(examples) / args.batch_size)
 
-            t = tqdm(range(batch_count), desc='Training Net')
+            t = range(batch_count)
             for _ in t:
                 sample_ids = np.random.randint(len(examples), size=args.batch_size)
                 boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
@@ -71,7 +71,7 @@ class NNetWrapper(NeuralNet):
                 # record loss
                 pi_losses.update(l_pi.item(), boards.size(0))
                 v_losses.update(l_v.item(), boards.size(0))
-                t.set_postfix(Loss_pi=pi_losses, Loss_v=v_losses)
+                #t.set_postfix(Loss_pi=pi_losses, Loss_v=v_losses)
 
                 # compute gradient and do SGD step
                 optimizer.zero_grad()
@@ -108,8 +108,7 @@ class NNetWrapper(NeuralNet):
         if not os.path.exists(folder):
             print("Checkpoint Directory does not exist! Making directory {}".format(folder))
             os.mkdir(folder)
-        else:
-            print("Checkpoint Directory exists! ")
+            
         torch.save({
             'state_dict': self.nnet.state_dict(),
         }, filepath)
