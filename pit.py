@@ -13,7 +13,7 @@ use this script to play any two agents against each other, or play manually with
 any agent.
 """
 
-mini_othello = False  # Play in 6x6 instead of the normal 8x8.
+mini_othello = True  # Play in 6x6 instead of the normal 8x8.
 human_vs_cpu = False
 
 if mini_othello:
@@ -42,7 +42,7 @@ if human_vs_cpu:
     player2 = hp
 else:
     n2 = NNet(g)
-    n2.load_checkpoint('./pretrained_models/othello/pytorch/', '8x8_100checkpoints_best.pth.tar')
+    n2.load_checkpoint('./pretrained_models/othello/pytorch/', '6x100x25_best.pth.tar')
     args2 = dotdict({'numMCTSSims': 50, 'cpuct': 1.0})
     mcts2 = MCTS(g, n2, args2)
     n2p = lambda x: np.argmax(mcts2.getActionProb(x, temp=1))
@@ -51,4 +51,4 @@ else:
 
 arena = Arena.Arena(n1p, player2, g, display=OthelloGame.display)
 
-print(arena.playGames(1, verbose=True))
+print(arena.playGames(2, verbose=True))
