@@ -2,64 +2,50 @@ import sys
 sys.path.append('..')
 from utils import *
 
-import argparse
-from tensorflow.keras.models import *
-from tensorflow.keras.layers import *
-from tensorflow.keras.optimizers import *
 import torch
-"""
-NeuralNet for the game of TicTacToe.
+import torch.nn as nn
+import torch.nn.functional as F
 
-Author: Evgeny Tyurin, github.com/evg-tyurin
-Date: Jan 5, 2018.
-
-Based on the OthelloNNet by SourKream and Surag Nair.
-"""
-from tensorflow.keras.layers import Lambda
-
-def print_and_save_tensor(x):
-    import tensorflow as tf
-    import torch
-    # Extract the tensor value and convert it to a NumPy array
-    x_value = tf.convert_to_tensor(x[0])
-    x_image_value = tf.convert_to_tensor(x[1])
-
-    # Convert the NumPy array to a PyTorch tensor
-    x_torch = torch.tensor(x_value.numpy())
-    x_image_torch = torch.tensor(x_image_value.numpy())
-    print(x_torch.shape)
-
-    # Save the PyTorch tensors to .pt files
-    torch.save(x_torch, 'x_tensor.pt')
-    torch.save(x_image_torch, 'x_image_tensor.pt')
-
-    # Return the original tensor to continue the computation
-    return x[0]
-
-
-class TicTacToeNNet():
+class TicTacToeNNet(nn.Module):
     def __init__(self, game, args):
         # game params
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
         self.args = args
 
-        # Neural Net
-        self.input_boards = Input(shape=(self.board_x, self.board_y))    # s: batch_size x board_x x board_y
+        super(TicTacToeNNet, self).__init__()
+        self.conv1 = nn.Conv2d(1, args.num_channels, 3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1)
+        self.conv4 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1)
 
-        x_image = Reshape((self.board_x, self.board_y, 1))(self.input_boards)                # batch_size  x board_x x board_y x 1
-        h_conv1 = Activation('relu')(BatchNormalization(axis=3)(Conv2D(args.num_channels, 3, padding='same')(x_image)))         # batch_size  x board_x x board_y x num_channels
-        h_conv2 = Activation('relu')(BatchNormalization(axis=3)(Conv2D(args.num_channels, 3, padding='same')(h_conv1)))         # batch_size  x board_x x board_y x num_channels
-        h_conv3 = Activation('relu')(BatchNormalization(axis=3)(Conv2D(args.num_channels, 3, padding='same')(h_conv2)))
+        self.bn1 = nn.BatchNorm2d(args.num_channels)
+        self.bn2 = nn.BatchNorm2d(args.num_channels)
+        self.bn3 = nn.BatchNorm2d(args.num_channels)
+        self.bn4 = nn.BatchNorm2d(args.num_channels)
 
-        h_conv3 = Lambda(lambda x: print_and_save_tensor([x, x_image]), output_shape=lambda s: s)(h_conv3)
+        self.fc1 = nn.Linear(args.num_channels*(self.board_x-4)*(self.board_y-4), 1024)
+        self.fc_bn1 = nn.BatchNorm1d(1024)
 
-        h_conv4 = Activation('relu')(BatchNormalization(axis=3)(Conv2D(args.num_channels, 3, padding='valid')(h_conv3)))        # batch_size  x (board_x-2) x (board_y-2) x num_channels
-        h_conv4_flat = Flatten()(h_conv4)       
-        s_fc1 = Dropout(args.dropout)(Activation('relu')(BatchNormalization(axis=1)(Dense(1024)(h_conv4_flat))))  # batch_size x 1024
-        s_fc2 = Dropout(args.dropout)(Activation('relu')(BatchNormalization(axis=1)(Dense(512)(s_fc1))))          # batch_size x 1024
-        self.pi = Dense(self.action_size, activation='softmax', name='pi')(s_fc2)   # batch_size x self.action_size
-        self.v = Dense(1, activation='tanh', name='v')(s_fc2)                    # batch_size x 1
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc_bn2 = nn.BatchNorm1d(512)
 
-        self.model = Model(inputs=self.input_boards, outputs=[self.pi, self.v])
-        self.model.compile(loss=['categorical_crossentropy','mean_squared_error'], optimizer=Adam(args.lr), run_eagerly=True) 
+        self.fc3 = nn.Linear(512, self.action_size)
+
+        self.fc4 = nn.Linear(512, 1)
+
+    def forward(self, s):
+        s = s.view(-1, 1, self.board_x, self.board_y)                # batch_size x 1 x board_x x board_y
+        s = F.relu(self.bn1(self.conv1(s)))                          # batch_size x num_channels x board_x x board_y
+        s = F.relu(self.bn2(self.conv2(s)))                          # batch_size x num_channels x board_x x board_y
+        s = F.relu(self.bn3(self.conv3(s)))                          # batch_size x num_channels x (board_x-2) x (board_y-2)
+        s = F.relu(self.bn4(self.conv4(s)))                          # batch_size x num_channels x (board_x-4) x (board_y-4)
+        s = s.view(-1, self.args.num_channels*(self.board_x-4)*(self.board_y-4))
+
+        s = F.dropout(F.relu(self.fc_bn1(self.fc1(s))), p=self.args.dropout, training=self.training)  # batch_size x 1024
+        s = F.dropout(F.relu(self.fc_bn2(self.fc2(s))), p=self.args.dropout, training=self.training)  # batch_size x 512
+
+        pi = self.fc3(s)                                                                         # batch_size x action_size
+        v = self.fc4(s)                                                                          # batch_size x 1
+
+        return F.log_softmax(pi, dim=1), torch.tanh(v)
