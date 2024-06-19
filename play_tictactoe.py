@@ -49,7 +49,8 @@ else:
     n2p = lambda x: np.argmax(mcts2.getActionProb(x, temp=1))
 
     player2 = n2p  # Player 2 is neural network if it's cpu vs cpu.
+random_player = RandomPlayer(g).play
 
-arena = Arena.Arena(n1p, player2, g, display=TicTacToeGame.display)
+arena = Arena.Arena(n1p, random_player, g, display=TicTacToeGame.display)
 
 print(arena.playGames(2, verbose=True))

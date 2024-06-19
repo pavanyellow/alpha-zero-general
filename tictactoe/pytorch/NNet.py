@@ -12,22 +12,16 @@ from NeuralNet import NeuralNet
 
 import argparse
 from .TicTacToeNNet import TicTacToeNNet as onnet
+import torch
+import torch.optim as optim
 
-"""
-NeuralNet wrapper class for the TicTacToeNNet.
-
-Author: Evgeny Tyurin, github.com/evg-tyurin
-Date: Jan 5, 2018.
-
-Based on (copy-pasted from) the NNet by SourKream and Surag Nair.
-"""
 
 args = dotdict({
     'lr': 0.001,
     'dropout': 0.3,
     'epochs': 10,
     'batch_size': 64,
-    'cuda': False,
+    'cuda': torch.cuda.is_available(),
     'num_channels': 512,
 })
 
@@ -36,6 +30,8 @@ class NNetWrapper(NeuralNet):
         self.nnet = onnet(game, args)
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
+        if args.cuda:
+            self.nnet.cuda()
 
     def train(self, examples):
         """
@@ -51,35 +47,42 @@ class NNetWrapper(NeuralNet):
         """
         board: np array with board
         """
-        # timing
+
         start = time.time()
+
         # preparing input
-        board = board[np.newaxis, :, :]
+        board = torch.FloatTensor(board.astype(np.float64))
+        if args.cuda: board = board.contiguous().cuda()
+        board = board.view(1, self.board_x, self.board_y)
+        self.nnet.eval()
+        with torch.no_grad():
+            pi, v = self.nnet(board)
 
-        # run
-        pi, v = self.nnet.model.predict(board, verbose=False)
+        # print('PREDICTION TIME TAKEN : {0:03f}'.format(time.time()-start))
+        return torch.exp(pi).data.cpu().numpy()[0], v.data.cpu().numpy()[0]
+    
+    def loss_pi(self, targets, outputs):
+        return -torch.sum(targets * outputs) / targets.size()[0]
 
-        #print('PREDICTION TIME TAKEN : {0:03f}'.format(time.time()-start))
-        return pi[0], v[0]
+    def loss_v(self, targets, outputs):
+        return torch.sum((targets - outputs.view(-1)) ** 2) / targets.size()[0]
 
     def save_checkpoint(self, folder='checkpoint', filename='checkpoint.pth.tar'):
-        # change extension
-        filename = filename.split(".")[0] + ".h5"
-
         filepath = os.path.join(folder, filename)
         if not os.path.exists(folder):
             print("Checkpoint Directory does not exist! Making directory {}".format(folder))
             os.mkdir(folder)
         else:
             print("Checkpoint Directory exists! ")
-        self.nnet.model.save_weights(filepath)
+        torch.save({
+            'state_dict': self.nnet.state_dict(),
+        }, filepath)
 
     def load_checkpoint(self, folder='checkpoint', filename='checkpoint.pth.tar'):
-        # change extension
-        filename = filename.split(".")[0] + ".h5"
-
         # https://github.com/pytorch/examples/blob/master/imagenet/main.py#L98
         filepath = os.path.join(folder, filename)
         if not os.path.exists(filepath):
-            raise ValueError("No model in path '{}'".format(filepath))
-        self.nnet.model.load_weights(filepath)
+            raise ("No model in path {}".format(filepath))
+        map_location = None if args.cuda else 'cpu'
+        checkpoint = torch.load(filepath, map_location=map_location)
+        self.nnet.load_state_dict(checkpoint['state_dict'])

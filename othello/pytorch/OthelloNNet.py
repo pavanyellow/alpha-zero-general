@@ -11,6 +11,7 @@ x =1
 class OthelloNNet(nn.Module):
     def __init__(self, game, args):
 
+
         # game params
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
@@ -38,7 +39,10 @@ class OthelloNNet(nn.Module):
         self.fc4 = nn.Linear(512, 1)
 
     def forward(self, s):
-        print(f"forward called {x} times")
+        global x
+        x+=1
+        if x%100==0:
+            print(f"forward called {x} times")
         #                                                           s: batch_size x board_x x board_y
         s = s.view(-1, 1, self.board_x, self.board_y)                # batch_size x 1 x board_x x board_y
         s = F.relu(self.bn1(self.conv1(s)))                          # batch_size x num_channels x board_x x board_y
