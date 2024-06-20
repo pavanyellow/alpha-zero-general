@@ -20,7 +20,7 @@ class Coach():
     in Game and NeuralNet. args are specified in main.py.
     """
 
-    def __init__(self, game, nnet, args):
+    def __init__(self, game, nnet, args, random_player = None, greedy_player = None):
         self.game = game
         self.nnet = nnet
         self.pnet = self.nnet.__class__(self.game)  # the competitor network
@@ -28,6 +28,8 @@ class Coach():
         self.mcts = MCTS(self.game, self.nnet, self.args)
         self.trainExamplesHistory = []  # history of examples from args.numItersForTrainExamplesHistory latest iterations
         self.skipFirstSelfPlay = False  # can be overriden in loadTrainExamples()
+        self.random_player = random_player
+        self.greedy_player = greedy_player
 
     def executeEpisode(self):
         """
@@ -135,6 +137,19 @@ class Coach():
                 print(f'ACCEPTING NEW MODEL with win rate {float(nwins) *100 / (pwins + nwins)} %')
                 #self.nnet.save_checkpoint(folder=self.args.checkpoint, filename=self.getCheckpointFile(i))
                 self.nnet.save_checkpoint(folder=self.args.checkpoint, filename='best.pth.tar')
+            
+            # if self.random_player is not None:
+            #     arena = Arena(lambda x: np.argmax(nmcts.getActionProb(x, temp=0)),
+            #               self.random_player, self.game)
+            #     pwins, nwins, draws = arena.playGames(self.args.arenaCompare)
+            #     print(f"Player wins {nwins}, Random wins {pwins}, Draws {draws}")
+            # if self.greedy_player is not None:
+            #     arena = Arena(lambda x: np.argmax(nmcts.getActionProb(x, temp=0)),
+            #               self.greedy_player, self.game)
+            #     pwins, nwins, draws = arena.playGames(self.args.arenaCompare)
+            #     print(f"Player wins {nwins}, Greedy wins {pwins}, Draws {draws}")
+            
+
 
     def getCheckpointFile(self, iteration):
         return 'checkpoint_' + str(iteration) + '.pth.tar'

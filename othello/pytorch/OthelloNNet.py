@@ -2,60 +2,46 @@ import sys
 sys.path.append('..')
 from utils import *
 
-import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-x =1
+from ..OthelloGame import OthelloGame
+
+class ResidualBlock(nn.Module):
+    def __init__(self, hidden_dim):
+        super(ResidualBlock, self).__init__()
+        self.fc = nn.Linear(hidden_dim, hidden_dim)
+        self.bn = nn.BatchNorm1d(hidden_dim)
+
+    def forward(self, x):
+        residual = x
+        out = F.relu(self.bn(self.fc(x)))
+        return out + residual
 
 class OthelloNNet(nn.Module):
-    def __init__(self, game, args):
-
-
-        # game params
+    def __init__(self, game: OthelloGame, args, num_layers=4, hidden_dim=256):
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
         self.args = args
 
         super(OthelloNNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, args.num_channels, 3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1)
-        self.conv4 = nn.Conv2d(args.num_channels, args.num_channels, 3, stride=1)
 
-        self.bn1 = nn.BatchNorm2d(args.num_channels)
-        self.bn2 = nn.BatchNorm2d(args.num_channels)
-        self.bn3 = nn.BatchNorm2d(args.num_channels)
-        self.bn4 = nn.BatchNorm2d(args.num_channels)
+        self.fc1 = nn.Linear(self.board_x * self.board_y, hidden_dim)
+        self.fc_bn1 = nn.BatchNorm1d(hidden_dim)
 
-        self.fc1 = nn.Linear(args.num_channels*(self.board_x-4)*(self.board_y-4), 1024)
-        self.fc_bn1 = nn.BatchNorm1d(1024)
+        self.res_blocks = nn.ModuleList([ResidualBlock(hidden_dim) for _ in range(num_layers)])
+        
+        self.policy_head = nn.Linear(hidden_dim, self.action_size)
+        self.value_head = nn.Linear(hidden_dim, 1)
 
-        self.fc2 = nn.Linear(1024, 512)
-        self.fc_bn2 = nn.BatchNorm1d(512)
+    def forward(self, s: torch.Tensor):
+        s = s.view(-1, self.board_x * self.board_y)
+        s = F.relu(self.fc_bn1(self.fc1(s)))
 
-        self.fc3 = nn.Linear(512, self.action_size)
+        for res_block in self.res_blocks:
+            s = res_block(s)
 
-        self.fc4 = nn.Linear(512, 1)
+        policy = self.policy_head(s)
+        value = self.value_head(s)
 
-    def forward(self, s):
-        global x
-        x+=1
-        if x%100==0:
-            print(f"forward called {x} times")
-        #                                                           s: batch_size x board_x x board_y
-        s = s.view(-1, 1, self.board_x, self.board_y)                # batch_size x 1 x board_x x board_y
-        s = F.relu(self.bn1(self.conv1(s)))                          # batch_size x num_channels x board_x x board_y
-        s = F.relu(self.bn2(self.conv2(s)))                          # batch_size x num_channels x board_x x board_y
-        s = F.relu(self.bn3(self.conv3(s)))                          # batch_size x num_channels x (board_x-2) x (board_y-2)
-        s = F.relu(self.bn4(self.conv4(s)))                          # batch_size x num_channels x (board_x-4) x (board_y-4)
-        s = s.view(-1, self.args.num_channels*(self.board_x-4)*(self.board_y-4))
-
-        s = F.dropout(F.relu(self.fc_bn1(self.fc1(s))), p=self.args.dropout, training=self.training)  # batch_size x 1024
-        s = F.dropout(F.relu(self.fc_bn2(self.fc2(s))), p=self.args.dropout, training=self.training)  # batch_size x 512
-
-        pi = self.fc3(s)                                                                         # batch_size x action_size
-        v = self.fc4(s)                                                                          # batch_size x 1
-
-        return F.log_softmax(pi, dim=1), torch.tanh(v)
+        return F.log_softmax(policy, dim=1), torch.tanh(value)

@@ -18,7 +18,7 @@ args = dotdict({
     'lr': 0.001,
     'dropout': 0.3,
     'epochs': 10,
-    'batch_size': 64,
+    'batch_size': 256,
     'cuda': torch.cuda.is_available(),
     'num_channels': 512,
 })
@@ -104,8 +104,6 @@ class NNetWrapper(NeuralNet):
         if not os.path.exists(folder):
             print("Checkpoint Directory does not exist! Making directory {}".format(folder))
             os.mkdir(folder)
-        else:
-            print("Checkpoint Directory exists! ")
         torch.save({
             'state_dict': self.nnet.state_dict(),
         }, filepath)

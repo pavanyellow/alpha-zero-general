@@ -19,7 +19,7 @@ class ResidualBlock(nn.Module):
         return out + residual
 
 class TicTacToeNNet(nn.Module):
-    def __init__(self, game : TicTacToeGame, args, residual_blocks=4, hidden_dim=64):
+    def __init__(self, game : TicTacToeGame, args, residual_blocks=4, hidden_dim=32):
         # game params
         self.board_x, self.board_y = game.getBoardSize()
         self.action_size = game.getActionSize()
@@ -34,8 +34,8 @@ class TicTacToeNNet(nn.Module):
         # Residual blocks
         self.res_block1 = ResidualBlock(hidden_dim)
         self.res_block2 = ResidualBlock(hidden_dim)
-        self.res_block3 = ResidualBlock(hidden_dim)
-        self.res_block4 = ResidualBlock(hidden_dim)
+        # self.res_block3 = ResidualBlock(hidden_dim)
+        # self.res_block4 = ResidualBlock(hidden_dim)
         
         # Output layers
         self.policy_head = nn.Linear(hidden_dim, self.action_size)
@@ -51,8 +51,8 @@ class TicTacToeNNet(nn.Module):
         
         s = self.res_block1(s)                  
         s = self.res_block2(s)
-        s = self.res_block3(s)
-        s = self.res_block4(s)
+        # s = self.res_block3(s)
+        # s = self.res_block4(s)
 
         policy = self.policy_head(s)
 

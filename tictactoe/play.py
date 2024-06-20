@@ -16,6 +16,10 @@ second_best_filename = 'temp.pth.tar'
 
 game = TicTacToeGame(3)
 
+random_player = RandomPlayer(game).play
+greedy_player = GreedyPlayer(game).play
+human_player = HumanTicTacToePlayer(game).play
+
 def get_player(folder, filename , temp = 1):
     n = NNet(game)
     n.load_checkpoint(folder, filename)
@@ -23,14 +27,11 @@ def get_player(folder, filename , temp = 1):
     mcts = MCTS(game, n, args)
     return lambda x: np.argmax(mcts.getActionProb(x, temp=1))
 
-# all players
-random_player = RandomPlayer(game).play
-greedy_player = GreedyPlayer(game).play
-human_player = HumanTicTacToePlayer(game).play
+
 best_player = get_player(folder, best_filename)
 second_best_player = get_player(folder, second_best_filename)
 
 
-arena = Arena.Arena(best_player, second_best_player, game, display=TicTacToeGame.display)
+arena = Arena.Arena(best_player, random_player, game, display=TicTacToeGame.display)
 
-print(arena.playGames(100, verbose=False))
+print(arena.playGames(100, verbose = False, print_final_board= True))

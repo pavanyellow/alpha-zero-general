@@ -27,7 +27,7 @@ class Arena():
         self.game = game
         self.display = display
 
-    def playGame(self, verbose=False):
+    def playGame(self, verbose=False, print_final_board=False):
         """
         Executes one episode of a game.
 
@@ -72,14 +72,15 @@ class Arena():
             if hasattr(player, "endGame"):
                 player.endGame()
 
-
-        assert self.display
-        print("Game over: Turn ", str(it), "Result ", str(self.game.getGameEnded(board, 1)))
-        self.display(board)
+        if verbose or print_final_board:
+            assert self.display
+            print("Game over: Turn ", str(it), "Result ", str(self.game.getGameEnded(board, 1)))
+            self.display(board)
+        
         
         return curPlayer * self.game.getGameEnded(board, curPlayer)
 
-    def playGames(self, num, verbose=False):
+    def playGames(self, num, verbose=False, print_final_board=False):
         """
         Plays num games in which player1 starts num/2 games and player2 starts
         num/2 games.
@@ -97,7 +98,7 @@ class Arena():
         #t = tqdm(range(num), desc="Arena.playGames (1)")
         t = range(num)
         for _ in t:
-            gameResult = self.playGame(verbose=verbose)
+            gameResult = self.playGame(verbose=verbose, print_final_board=print_final_board)
             if gameResult == 1:
                 oneWon += 1
             elif gameResult == -1:
@@ -111,7 +112,7 @@ class Arena():
         t = range(num)
 
         for _ in t:
-            gameResult = self.playGame(verbose=verbose)
+            gameResult = self.playGame(verbose=verbose, print_final_board=print_final_board)
             if gameResult == -1:
                 oneWon += 1
             elif gameResult == 1:
